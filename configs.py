@@ -15,7 +15,7 @@ cam_param_configs_sim = {
     "depth_trunc": 50.,
     "depth_scalar": 1 / 25.5,
 
-    "root": "./data",
+    "root": "../data",
     "color_path": "rgb",
     "depth_path": "depth",
     "img_suffix": "png",
@@ -23,3 +23,7 @@ cam_param_configs_sim = {
     "result_path": "results"
 }
 
+
+cam_param_configs_sim["K"] = np.array([[cam_param_configs_sim["cx"], 0, cam_param_configs_sim["cx"]],
+                                       [0, cam_param_configs_sim["cx"], cam_param_configs_sim["cx"]],
+                                       [0, 0, 1]], dtype=np.float64)
