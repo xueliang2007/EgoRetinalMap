@@ -1,12 +1,14 @@
 import os
 import cv2
 import glob
+import json
 import numpy as np
 import open3d as o3d
 from scipy.spatial.transform.rotation import Rotation as Rsci
 
 from core.ego_pose import EgoPose
 from core.uvs_transform import CoordTrans
+from utils import load_json, write_json
 from configs import cam_param_configs_sim
 
 cfgs = cam_param_configs_sim
@@ -29,6 +31,7 @@ class EgoRetinalMap(EgoPose, CoordTrans):
         self.num_imgs = len(self.basenames_order)
 
         self.rpy_v2c = cam_params["rpy_v2c"]
+        self.path_traj = cam_params["path_traj"]
         self.path_color = cam_params["color_path"]
         self.path_depth = cam_params["depth_path"]
         self.path_results = cam_params["result_path"]
@@ -124,14 +127,28 @@ class EgoRetinalMap(EgoPose, CoordTrans):
 
     def run_single(self, img_idx):
         basename = self.basenames_order[img_idx]
-        bgr_fn = os.path.join(self.path_color, self.basenames_order[img_idx])
-        depth_fn = os.path.join(self.path_depth, self.basenames_order[img_idx])
+        bgr_fn = f"{self.path_color}/{self.basenames_order[img_idx]}"
+        depth_fn = f"{self.path_depth}/{self.basenames_order[img_idx]}"
         self.cam_pose_update(bgr_fn, depth_fn, vel_instan_veh=None, pcd_vis=False)
 
         img = cv2.imread(bgr_fn)
         uvs_gd = self.pts_veh2cam()
         ego_retinal_map = self.get_ego_retinal_map(img, uvs_gd)
         img = self.vis_grids(img, ego_retinal_map, uvs_gd, basename, to_save=0)
+
+        traj_json_fn = f"{self.path_traj}/{self.basenames_order[img_idx]}.json"
+        if os.path.exists(traj_json_fn):
+            traj_datas = load_json(traj_json_fn)
+            traj_iuvs = traj_datas["traj_iuvs"]
+            traj_euvs = self.uvs_img2ego(self.remap_xy, traj_iuvs)
+            plot = 1
+            if plot:
+                # cv2.polylines(img, [tr_gd.astype(np.int)], isClosed=False, color=(0, 0, 255), thickness=2)
+                # cv2.imwrite(f"{self.traj_vis_path}/{basename}", img)
+                # cv2.imshow("img", img)
+                cv2.waitKey(2)
+            traj_datas["traj_euvs"] = traj_euvs
+            write_json(traj_datas, traj_json_fn)
 
         pts_gd_veh = self.iuvs_c2v(uvs_gd, self.rot_mtx_v2c, self.txyz_v2c)
         assert np.sum(np.abs(pts_gd_veh - self.pts_gd_veh)) < 1.e-6, "There is some errors in 'iuvs_c2v'"

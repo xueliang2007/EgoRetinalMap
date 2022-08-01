@@ -71,6 +71,14 @@ class CoordTrans:
 
         return pts_veh
 
+    def uvs_img2ego(self, remap_xy, iuvs):
+        euvs = [self.uv_img2ego(remap_xy, uv) for uv in iuvs]
+        return euvs
+
+    def uvs_ego2img(self, remap_xy, euvs):
+        iuvs = [self.uv_ego2img(remap_xy, uv) for uv in euvs]
+        return iuvs
+
 
 def demo():
     ct = CoordTrans(cfgs["K"])
