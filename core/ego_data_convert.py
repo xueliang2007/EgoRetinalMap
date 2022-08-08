@@ -11,28 +11,112 @@ import numpy as np
 import open3d as o3d
 from matplotlib import pyplot as plt
 
-from utils import crop_pcd
+
+def read_cam_params(filename):
+    assert os.path.exists(filename)
+
+    with open(filename, "r") as fs:
+        lines = [line[:-1].split(": ") for line in fs.readlines()]
+
+    cam_params = {"img_w": int(lines[0][1]), "img_h": int(lines[1][1])}
+    for k, v in zip(["fx", "fy", "cx", "cy", "omega", "cx1", "cy2"], lines[2:]):
+        cam_params[k] = float(v[1])
+
+    cam_params["K"] = np.array([[cam_params["fx"], 0, cam_params["cx"]],
+                                [0, cam_params["fy"], cam_params["cy"]],
+                                [0, 0, 1]], dtype=np.float64)
+    cam_params["R_rect"] = np.array([[0.9989, 0.0040, 0.0466],
+                                     [-0.0040, 1.0000, -0.0002],
+                                     [-0.0466, 0, 0.9989]], dtype=np.float64)
+    cam_params["K*R_rect"] = np.dot(cam_params["K"], cam_params["R_rect"])
+    return cam_params
+
+
+def get_ground_from_disp(fx, fy, cx, cy, img_w, img_h, bgr_fn, disp_fn, vis):
+    basename = os.path.basename(bgr_fn)
+    disp = DataConvert.read_disparity(disp_fn)
+    disp = cv2.resize(disp, (img_w, img_h))
+
+    Tx = -0.1  # m
+    f = (fx + fy) * 0.5
+    Q = np.array([[1.0, 0.0, 0.0, -cx],
+                  [0.0, 1.0, 0.0, -cy],
+                  [0.0, 0.0, 0.0,   f],
+                  [0.0, 0.0, -1.0 / Tx, 0.0]])
+    depth_map = cv2.reprojectImageTo3D(disp.astype(np.float32), Q, handleMissingValues=True)
+
+    valid_roi = [100, 100, img_w-100, img_h-100]
+    mask = np.zeros((img_h, img_w), dtype=np.uint8)
+    cv2.rectangle(mask, (valid_roi[0], valid_roi[1]), (valid_roi[2], valid_roi[3]), 1, -1)
+    mask = mask.astype(np.bool)
+
+    mask[depth_map[:, :, 2] < 0] = False
+    mask[depth_map[:, :, 2] > 80] = False
+    pts = depth_map[mask, ::].reshape((-1, 3))
+
+    print(basename)
+    print(f"before, num: {len(pts)}, mask: {np.sum(mask)}")
+    for xyz_idx in range(3):
+        print(f"\t{'XYZ'[xyz_idx]}, min: {np.min(pts[:, xyz_idx])}, max: {np.max(pts[:, xyz_idx])}")
+
+    xyz_minmax = [[-15, 15], [-4, 5], [3, 25]]
+    for xyz_idx in range(3):
+        mask[depth_map[:, :, xyz_idx] < xyz_minmax[xyz_idx][0]] = False
+        mask[depth_map[:, :, xyz_idx] > xyz_minmax[xyz_idx][1]] = False
+
+    pts = depth_map[mask, ::].reshape((-1, 3))
+    print(f"after, num: {len(pts)}")
+    for xyz_idx in range(3):
+        print(f"\t{'XYZ'[xyz_idx]}, min: {np.min(pts[:, xyz_idx])}, max: {np.max(pts[:, xyz_idx])}")
+
+    del depth_map, disp
+
+    pcd = o3d.geometry.PointCloud(points=o3d.utility.Vector3dVector(pts))
+    pcd = pcd.voxel_down_sample(voxel_size=0.15)
+    print(f"down, num: {len(pcd.points)}")
+
+    plane_model, inlier_idxs = pcd.segment_plane(distance_threshold=0.06, ransac_n=3, num_iterations=500)
+    a, b, c, d = plane_model
+    cam_h = np.fabs(d) / np.sqrt(a * a + b * b + c * c)
+
+    if vis:
+        inlier_pcd = pcd.select_by_index(inlier_idxs)
+        inlier_pcd.paint_uniform_color([1.0, 0, 0])
+        outlier_pcd = pcd.select_by_index(inlier_idxs, invert=True)
+        outlier_pcd.paint_uniform_color([0, 1., 0])
+        mesh = o3d.geometry.TriangleMesh.create_coordinate_frame(size=2)
+        # o3d.visualization.draw_geometries([pcd, mesh])
+        o3d.visualization.draw_geometries([mesh, inlier_pcd, outlier_pcd])
+    return plane_model, cam_h
 
 
 class DataConvert:
-    def __init__(self, case_path, plot):
+    def __init__(self, case_path):
         self.vTR = self.read_traj(f"{case_path}/traj_prediction.txt")
         self.basenames = self.read_img_list(f"{case_path}/im_list.list")
-        self.cam_params = self.read_cam_params(f"{case_path}/calib_fisheye.txt")
+        self.cam_params = read_cam_params(f"{case_path}/calib_fisheye.txt")
 
         self.img_fns = [f"{case_path}/im/{name}" for name in self.basenames]
         self.disp_fns = [f"{case_path}/disparity/{name}.disp.txt" for name in self.basenames]
 
         self.case_path = case_path
         self.size = len(self.vTR["vTr"])
-        self.traj_json_path = f"{case_path}/traj_jsons"
         self.traj_vis_path = f"{case_path}/traj_vis"
+        self.traj_json_path = f"{case_path}/traj_jsons"
 
         for folder_path in [self.traj_json_path, self.traj_vis_path]:
             if not os.path.exists(folder_path):
                 os.makedirs(folder_path)
 
-    def read_disparity(self, filename):
+    def read_img_list(self, filename):
+        assert os.path.exists(filename), "File don't exits!"
+        with open(filename, "r") as fs:
+            vFilename = [line.replace("\n", "") for line in fs.readlines()]
+
+        return vFilename
+
+    @staticmethod
+    def read_disparity(filename):
         assert filename.endswith(".txt")
         assert os.path.exists(filename), "File don't exits!"
 
@@ -84,86 +168,6 @@ class DataConvert:
         vTR = {"vTr": vTr, "vTakenFrame": vTakenFrame}
         return vTR
 
-    def read_img_list(self, filename):
-        assert os.path.exists(filename), "File don't exits!"
-        with open(filename, "r") as fs:
-            vFilename = [line.replace("\n", "") for line in fs.readlines()]
-
-        return vFilename
-
-    def read_cam_params(self, filename):
-        assert os.path.exists(filename)
-
-        with open(filename, "r") as fs:
-            lines = [line[:-1].split(": ") for line in fs.readlines()]
-
-        cam_params = {"img_w": int(lines[0][1]), "img_h": int(lines[1][1])}
-        for k, v in zip(["fx", "fy", "cx", "cy", "omega", "cx1", "cy2"], lines[2:]):
-            cam_params[k] = float(v[1])
-
-        cam_params["K"] = np.array([[cam_params["fx"], 0, cam_params["cx"]],
-                                    [0, cam_params["fy"], cam_params["cy"]],
-                                    [0, 0, 1]], dtype=np.float64)
-        cam_params["R_rect"] = np.array([[0.9989, 0.0040, 0.0466],
-                                         [-0.0040, 1.0000, -0.0002],
-                                         [-0.0466, 0, 0.9989]], dtype=np.float64)
-
-        cam_params["K*R_rect"] = np.dot(cam_params["K"], cam_params["R_rect"])
-        return cam_params
-
-    def get_ground_from_disp(self, bgr_fn, disp_fn, vis):
-        basename = os.path.basename(bgr_fn)
-        disp = self.read_disparity(disp_fn)
-
-        # bgr = cv2.imread(bgr_fn)
-        # bgr = np.zeros((960, 1280, 3), np.uint8)
-        # assert bgr.shape[:2] == disp.shape[:2]
-
-        depth = 1. / disp
-        # depth[depth <= 0.] = 0.
-
-        plt.imsave(f"{self.traj_vis_path}/{basename}-disp.png", disp)
-        # plt.imshow(disp)
-        # plt.show()
-        plt.imsave(f"{self.traj_vis_path}/{basename}-depth.png", depth)
-        # plt.imshow(depth)
-        # plt.show()
-        # plt.close()
-
-        # depth = cv2.resize(depth, (1280, 960))
-        #
-        # bgr_o3d = o3d.geometry.Image(bgr)
-        # depth_o3d = o3d.geometry.Image(depth.astype(np.float32))
-        # pass
-        #
-        #
-        # cam_k_o3d = o3d.camera.PinholeCameraIntrinsic(self.cam_params["img_w"], self.cam_params["img_h"],
-        #                                               self.cam_params["fx"], self.cam_params["fy"],
-        #                                               self.cam_params["cx"], self.cam_params["cy"])
-        # rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(bgr_o3d, depth_o3d, depth_scale=1.0,
-        #                                                           depth_trunc=10.0, convert_rgb_to_intensity=False)
-        # pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, cam_k_o3d)
-        #
-        # pcd = crop_pcd(pcd, x_min=-5, x_max=5, z_min=0, z_max=10, uniform_color=False, vis=False)
-
-        # pcd_ds = pcd.voxel_down_sample(voxel_size=0.1)
-        # plane_model, inlier_idxs = pcd_ds.segment_plane(distance_threshold=0.05, ransac_n=3, num_iterations=500)
-        #
-        # if vis:
-        #     inlier_cloud = pcd_ds.select_by_index(inlier_idxs)
-        #     inlier_cloud.paint_uniform_color([1.0, 0, 0])
-        #
-        #     mesh = o3d.geometry.TriangleMesh.create_coordinate_frame()
-        #     o3d.visualization.draw_geometries([pcd, mesh])
-        #     outlier_cloud = pcd_ds.select_by_index(inlier_idxs, invert=True)
-        #     o3d.visualization.draw_geometries([inlier_cloud, outlier_cloud, mesh], point_show_normal=True)
-        #
-        # a, b, c, d = plane_model
-        # cam_h = np.fabs(d) / np.sqrt(a * a + b * b + c * c)
-        # return plane_model, cam_h
-        pass
-
-
     def extract_trajs(self, plot):
         for iFrame in range(self.size):
             tr = self.vTR["vTr"][iFrame]
@@ -197,13 +201,8 @@ def convert_all_cases():
     root = "/Users/xl/Desktop/ShaoJun/ego_paper_data"
     cases = sorted([d for d in os.listdir(root) if os.path.isdir(f"{root}/{d}")])
     for k, case in enumerate(cases):
-        dc = DataConvert(case_path=f"{root}/{case}", plot=True)
-        # dc.extract_trajs(plot=False)
-
-        for iFrame in range(dc.size):
-            bgr_fn = dc.img_fns[iFrame]
-            disp_fn = f"{dc.case_path}/disparity/{os.path.basename(bgr_fn)}.disp.txt"
-            dc.get_ground_from_disp(bgr_fn, disp_fn, vis=True)
+        dc = DataConvert(case_path=f"{root}/{case}")
+        dc.extract_trajs(plot=False)
 
         print(f"k: {k}, case: {case} done!")
 

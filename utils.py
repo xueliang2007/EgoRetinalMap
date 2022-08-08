@@ -21,7 +21,7 @@ def write_json(data_dict, save_fn):
     return
 
 
-def crop_pcd(pcd, x_min=-10, x_max=10, z_min=-20, z_max=30, uniform_color=True, vis=True):
+def crop_pcd(pcd, x_min=-10, x_max=10, y_min=-0.5, y_max=3., z_min=-20, z_max=30, uniform_color=True, vis=True):
     if isinstance(pcd, str):
         pcd = o3d.io.read_point_cloud(pcd)
     bounding_ploy = np.array([
@@ -33,9 +33,9 @@ def crop_pcd(pcd, x_min=-10, x_max=10, z_min=-20, z_max=30, uniform_color=True, 
     bounding_polygon = np.array(bounding_ploy, dtype=np.float64)
 
     vol = o3d.visualization.SelectionPolygonVolume()
+    vol.axis_max = y_max
+    vol.axis_min = y_min
     vol.orthogonal_axis = "Y"
-    vol.axis_max = 3.
-    vol.axis_min = -0.5
     vol.bounding_polygon = o3d.utility.Vector3dVector(bounding_polygon)
     # vol = o3d.visualization.read_selection_polygon_volume()
     """Json Example

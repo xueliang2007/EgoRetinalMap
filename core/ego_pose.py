@@ -1,3 +1,6 @@
+import os
+import cv2
+import glob
 import numpy as np
 import open3d as o3d
 from scipy.spatial.transform.rotation import Rotation as Rsci
@@ -143,9 +146,7 @@ class EgoPose:
         txyz_v2c = np.array([[0], [pvo[1]], [0]], dtype=np.float).reshape(1, 3)
         return eulers_v2c, txyz_v2c
 
-    def cam_pose_update(self, bgr_fn, depth_fn, vel_instan_veh, pcd_vis):
-        self.gd_abcd, self.cam_h = self.get_ground_from_pcd(bgr_fn, depth_fn, vis=pcd_vis)
-
+    def cam_pose_update(self, vel_instan_veh):
         if vel_instan_veh is None:
             eulers_yxz_v2c, txyz_v2c = self.get_ego_pose_v2c_without_instan_vel(self.gd_abcd)
         else:
