@@ -1,7 +1,5 @@
 """
 PaperDataset link: http://humbi-dataset.s3.amazonaws.com/fut_loc.zip
-
-Replace Matlab with Python
 """
 
 import os
