@@ -171,7 +171,14 @@ class EgoRetinalMap(EgoPose, CoordTrans):
             cv2.imshow("img_rs", img_rs)
             cv2.imshow("ego_map", ego_map)
             cv2.waitKey()
-        return img
+        return ego_map
+
+    def update_json_result(self, traj_datas, traj_euvs, traj_json_fn):
+        traj_datas["traj_euvs"] = traj_euvs
+        traj_datas["img_hw"] = [self.img_w, self.img_h]
+        traj_datas["cam_k"] = self.cam_k.tolist()
+        write_json(traj_datas, traj_json_fn.replace(".json", ".ie.json"))
+        os.remove(traj_json_fn)
 
     def run_single(self, img_idx):
         traj_iuvs = None
@@ -187,11 +194,8 @@ class EgoRetinalMap(EgoPose, CoordTrans):
             return
 
         disp = self.get_ground(basename, vis=False)
-        if disp is None:
-            print(f"\tDrop for disparity empty, i: {img_idx}")
-            return
-        if self.cam_h is None or self.cam_h < 1.5:
-            print(f"\tDrop for less pts in pcd, i: {img_idx}, cam_h: {self.cam_h}")
+        if disp is None or self.cam_h is None or self.cam_h < 1.5:
+            print(f"\tDrop for 'less pts in pcd', or 'disparity empty', i: {img_idx}, cam_h: {self.cam_h}")
             return
 
         if disp.dtype != np.float32:
@@ -202,26 +206,21 @@ class EgoRetinalMap(EgoPose, CoordTrans):
             print(f"\tDrop for wrong ground and pose, may be indoor, i: {img_idx}, angx: {angx:.2f}, angy: {angy:.2f}, angz: {angz:.2f}")
             return
 
-
-        uvs_gd = self.pts_veh2cam(pcd_vis=0)
+        uvs_gd = self.pts_veh2cam(pcd_vis=False)
         self.get_ego_remap(uvs_gd)
 
         img = cv2.imread(f"{self.path_color}/{basename}")
-        print(f"\ti: {img_idx}, bsname: {basename}, num_traj_filter: {len(traj_iuvs)}")
         save_status = self.warp_for_gy(img, disp, traj_iuvs, basename, show=False, save=True)
         if save_status:
             print(f"\t Drop for NaN exits, i: {img_idx}")
             return
 
         self.vis_grids(img, disp, uvs_gd, traj_iuvs, basename, show=0, save=True)
+        print(f"\tdone_i: {img_idx}, bsname: {basename}, num_traj_filter: {len(traj_iuvs)}")
 
-        # # np.savez("../data/remap_xy", remap_xy=self.remap_xy, traj_iuvs=traj_iuvs)
-        # # traj_euvs = self.uvs_warp(self.remap_xy, traj_iuvs, method="i2e")
-        # traj_datas["traj_euvs"] = traj_euvs
-        # write_json(traj_datas, traj_json_fn)
+        traj_euvs = self.uvs_warp(self.remap_xy, traj_iuvs, method="i2e")
+        self.update_json_result(traj_datas, traj_euvs, traj_json_fn)
         pass
-
-
 
 
 def all_case():
@@ -239,15 +238,12 @@ def all_case():
     gather_results_gy(cfgs["root"], dst_path=f"{cfgs['root']}/../all_case_results_for_gy_paper_datas")
 
 
-
 if __name__ == '__main__':
-    # cfgs = [cam_param_configs_sim, cam_param_ego_paper][1]
-    # cam_params, basenames_order = get_cam_params(cfgs)
-    # egr = EgoRetinalMap(cam_params, basenames_order)
-    # # for i in range(egr.num_imgs):
-    # #     egr.run_single(img_idx=i)
-    # egr.run_single(img_idx=20)
+    cfgs = [cam_param_configs_sim, cam_param_ego_paper][1]
+    cam_params, basenames_order = get_cam_params(cfgs)
+    egr = EgoRetinalMap(cam_params, basenames_order)
+    egr.run_single(img_idx=2)
 
-    all_case()
+    # all_case()
 
 

@@ -20,55 +20,101 @@ class CoordTrans:
         if not (0 < uv[0, 0] < self.img_w-1 and 0 < uv[1, 0] < self.img_h-1):
             return None
 
-        iu0, iv0 = int(uv[0, 0]), int(uv[1, 0])
-        iu1, iv1 = iu0 + 1, iv0 + 1
-
         umax, umin = np.max(remap[:, :, 0]), np.min(remap[:, :, 0])
         vmax, vmin = np.max(remap[:, :, 1]), np.min(remap[:, :, 1])
         if not (umin < uv[0, 0] < umax and vmin < uv[1, 0] < vmax):
             return None
 
-        uvs_ego, uvs_img = [], []
+        vertexs = [None] * 4  # tl, tr, br, bl
+        update_cnt = [0] * 4
+        errs = [0, 0, 0, 0, 10000]
         rmp_h, rmp_w = remap.shape[:2]
-        # uvs_img = np.array([[iu0, iv0], [iu0, iv1], [iu1, iv1], [iu1, iv0]], dtype=np.float32)
+        remap_vec = remap.reshape((-1, 2))
+        idxs = np.argpartition(np.sum(np.fabs(remap_vec - uv[:, 0]), axis=1), 250)[:250]
+        for k, i in enumerate(idxs):
+            uvi = remap_vec[i]
+            if uvi[0] < uv[0, 0] and uvi[1] < uv[1, 0]:
+                update_cnt[0] += 1
+                diff_curr0 = uv[0, 0] + uv[1, 0] - uvi[0] - uvi[1]
+                if vertexs[0] is None:
+                    vertexs[0] = i
+                    errs[0] = diff_curr0
+                else:
+                    uv_best = remap_vec[vertexs[0]]
+                    diff_min0 = uv[0, 0] + uv[1, 0] - uv_best[0] - uv_best[1]
+                    if diff_curr0 < diff_min0:
+                        vertexs[0] = i
+                        errs[0] = diff_curr0
+            elif uvi[0] > uv[0, 0] and uvi[1] < uv[1, 0]:
+                update_cnt[1] += 1
+                diff_curr1 = uvi[0] - uv[0, 0] + uv[1, 0] - uvi[1]
+                if vertexs[1] is None:
+                    vertexs[1] = i
+                    errs[1] = diff_curr1
+                else:
+                    uv_best = remap_vec[vertexs[1]]
+                    diff_min1 = uv_best[0] - uv[0, 0] + uv[1, 0] - uv_best[1]
+                    if diff_curr1 < diff_min1:
+                        vertexs[1] = i
+                        errs[1] = diff_curr1
+            elif uvi[0] > uv[0, 0] and uvi[1] > uv[1, 0]:
+                update_cnt[2] += 1
+                diff_curr2 = uvi[0] - uv[0, 0] + uvi[1] - uv[1, 0]
+                if vertexs[2] is None:
+                    vertexs[2] = i
+                    errs[2] = diff_curr2
+                else:
+                    uv_best = remap_vec[vertexs[2]]
+                    diff_min2 = uv_best[0] - uv[0, 0] + uv_best[1] - uv[1, 0]
+                    if diff_curr2 < diff_min2:
+                        vertexs[2] = i
+                        errs[2] = diff_curr2
+            elif uvi[0] < uv[0, 0] and uvi[1] > uv[1, 0]:
+                update_cnt[3] += 1
+                diff_curr3 = uv[0, 0] - uvi[0] + uvi[1] - uv[1, 0]
+                if vertexs[3] is None:
+                    vertexs[3] = i
+                    errs[3] = diff_curr3
+                else:
+                    uv_best = remap_vec[vertexs[3]]
+                    diff_min3 = uv[0, 0] - uv_best[0] + uv_best[1] - uv[1, 0]
+                    if diff_curr3 < diff_min3:
+                        vertexs[3] = i
+                        errs[3] = diff_curr3
+            if all(vertexs):
+                sum_curr = sum(errs[:-1])
+                if sum_curr < errs[4]:
+                    errs[4] = sum_curr
+                    # print(f"k: {k:03d}, sum: {errs[4]:.3f}, {errs[0]:.2f}, {errs[1]:.2f}, {errs[2]:.2f}, {errs[3]:.2f}")
+                if sum_curr < 10:
+                    break
 
-        c0, r0 = divmod(np.argmin(np.abs(remap[:, :, 0] - uv[0, 0])), rmp_w)
-        value0 = remap[c0, r0, 0]
-        if value0 < uv[0, 0]:
-            eu0, ev0 = c0 - 1, r0
-            eu1, ev1 = c0, r0 + 1
-        else:
-            eu0, ev0 = c0, r0 - 1
-            eu1, ev1 = c0 + 1, r0
-        value00 = remap[eu0, ev0, 0]
-        value10 = remap[eu0, ev1, 0]
-        value11 = remap[eu1, ev1, 0]
-        value01 = remap[eu1, ev0, 0]
-        # uvs_img = np.array([[iu0, iv0], [iu0, iv1], [iu1, iv1], [iu1, iv0]], dtype=np.float32)
-        # uvs_img = np.array([remap[vi, ui, 0] for ui, vi in [[eu0, ev0], [eu0, ev1], [eu1, ev1], [eu1, ev0]]], dtype=np.float32)
-        uvs_img.append(np.array([remap[ui, vi] for ui, vi in [[eu0, ev0], [eu0, ev1], [eu1, ev1], [eu1, ev0]]], dtype=np.float32))
-        # uvs_ego.append(np.array([[eu0, ev0], [eu0, ev1], [eu1, ev1], [eu1, ev0]], dtype=np.float32))
-        uvs_ego.append(np.array([[ev0, eu0], [ev0, eu1], [ev1, eu1], [ev1, eu0]], dtype=np.float32))
+        if not all(vertexs):
+            return None
 
-        c1, r1 = divmod(np.argmin(np.abs(remap[:, :, 1] - uv[1, 0])), rmp_w)
-        value1 = remap[c1, r1, 1]
-        if value1 > uv[1, 0]:
-            eu0, ev0 = c1 - 1, r1
-            eu1, ev1 = c1, r1 + 1
-        else:
-            eu0, ev0 = c1, r1 - 1
-            eu1, ev1 = c1 + 1, r1
-        uvs_img.append(np.array([remap[ui, vi] for ui, vi in [[eu0, ev0], [eu0, ev1], [eu1, ev1], [eu1, ev0]]], dtype=np.float32))
-        uvs_ego.append(np.array([[eu0, ev0], [eu0, ev1], [eu1, ev1], [eu1, ev0]], dtype=np.float32))
+        PRINT = 0
+        if PRINT:
+            print("update_cnt: ", ", ".join([str(c) for c in update_cnt]))
+            print(uv.ravel())
+            for ii in range(2):
+                txt = f"{'xy'[ii]}: "
+                for jj in range(4):
+                    txt += f"{remap_vec[vertexs[jj], ii]:.4f}, "
+                print(txt[:-2])
 
-        ego_uv = []
-        for i, [src_i, dst_i] in enumerate(zip(uvs_img, uvs_ego)):
-            m = cv2.getPerspectiveTransform(src_i, dst_i)
-            img_uv1 = np.insert(uv, 2, 1, axis=0)
-            ego_uvx = np.dot(m, img_uv1)
-            ego_uv1 = ego_uvx / ego_uvx[2, 0]
-            ego_uv.append(ego_uv1[i, 0])
-        return ego_uv
+        uvs_img, uvs_ego = [], []
+        for idx in vertexs:
+            ri, ci = divmod(idx, rmp_w)
+            uvs_ego.append([ri, ci])
+        uvs_img = np.array([remap_vec[idx] for idx in vertexs], dtype=np.float32)
+        uvs_ego = np.array(uvs_ego, dtype=np.float32)
+
+        m = cv2.getPerspectiveTransform(uvs_img, uvs_ego)
+        img_uv1 = np.insert(uv, 2, 1, axis=0)
+        ego_uvx = np.dot(m, img_uv1)
+        ego_uv1 = ego_uvx / ego_uvx[2, 0]
+        ego_uv = ego_uv1[:2, 0][::-1]
+        return [ego_uv[0], ego_uv[1]]
 
     def uv_ego2img(self, remap_xy, uv):
         if len(uv.shape) != 2 or uv.shape[0] != 2:
@@ -76,19 +122,15 @@ class CoordTrans:
 
         eu0, ev0 = int(uv[0, 0]), int(uv[1, 0])
         eu1, ev1 = eu0 + 1, ev0 + 1
-        uvs_ego = np.array([[eu0, ev0], [eu0, ev1], [eu1, ev1], [eu1, ev0]], dtype=np.float32)
-
-        iv0 = np.argmin(np.abs(remap_xy[-1, :, 0] - eu0))
-        iu0 = np.argmin(np.abs(remap_xy[:, iv0, 1] - ev0))
-        iv1 = iv0 + 1
-        iu1 = iu0 + 1
-        uvs_img = np.array([[iu0, iv0], [iu0, iv1], [iu1, iv1], [iu1, iv0]], dtype=np.float32)
+        uvs_ego = [[ev0, eu0], [ev1, eu0], [ev1, eu1], [ev0, eu1]]
+        uvs_img = np.array([remap_xy[u, v] for u, v in uvs_ego], dtype=np.float32)
+        uvs_ego = np.array(uvs_ego, dtype=np.float32)
 
         m = cv2.getPerspectiveTransform(uvs_ego, uvs_img)
-        ego_uv1 = np.insert(uv, 2, 1, axis=0)
+        ego_uv1 = np.insert(uv[::-1], 2, 1, axis=0)
         img_uvx = np.dot(m, ego_uv1)
         img_uv1 = img_uvx / img_uvx[2, 0]
-        img_uv = img_uv1[:2, 0]
+        img_uv = [img_uv1[0, 0], img_uv1[1, 0]]
         return img_uv
 
     def iuvs_c2v(self, obj_uvs, rot_mtx_v2c, txyz_v2c):
@@ -112,28 +154,57 @@ class CoordTrans:
 
         return pts_veh
 
-    def invert_remap(self, remap_xy: np.ndarray):
-        I = np.zeros_like(remap_xy)
-        I[:, :, 1], I[:, :, 0] = np.indices(remap_xy.shape[:2])
-        remap_xy_inv = np.copy(I)
-        for i in range(10):
-            remap_xy_inv += I - cv2.remap(remap_xy, remap_xy_inv, None, interpolation=cv2.INTER_LINEAR)
-        return remap_xy_inv
+    def uvs_warp_verify(self):
+        data = np.load("../data/seq_20150401_walk_01_000500_l.png.rect.png.npz")
+        remap_xy, traj_iuvs = data["remap_xy"], data["traj_iuvs"]
+
+        mask = np.zeros((self.img_h, self.img_w, 3), dtype=np.uint8)
+        cv2.polylines(mask, [traj_iuvs.astype(np.int)], isClosed=False, color=(255, 255, 255), thickness=3)
+        ego_mask = cv2.remap(mask, remap_xy[:, :, 0], remap_xy[:, :, 1], cv2.INTER_LINEAR,
+                             borderMode=cv2.BORDER_CONSTANT, borderValue=[0, 0, 0])
+        uvs_op = []
+        for i, uv in enumerate(traj_iuvs):
+            r = self.uv_img2ego(remap_xy, uv)
+            if r is None:
+                r = [-1, -1]
+            uvs_op.append(r)
+        uvs_op = np.array(uvs_op)
+
+        # Verify-1. Plot on egoMap to verfiy, PASS
+        for u, v in uvs_op.astype(np.int):
+            if u < 0 and v < 0:
+                continue
+            cv2.circle(ego_mask, (u, v), 3, (0, 0, 255), -1)
+        cv2.imshow("ego_mask", ego_mask)
+        cv2.waitKey(10)
+
+        # Verify-2. inverse transform, compare with itself, PASS: uvs_op2 should equal to uv_op_gt
+        uv_op_gt = traj_iuvs[uvs_op[:, 0] > 0]
+        uvs_op = uvs_op[uvs_op[:, 0] > 0]
+        uvs_op2 = []
+        for i, uv in enumerate(uvs_op):
+            r = self.uv_ego2img(remap_xy, uv, uv_op_gt[i])
+            uvs_op2.append(r)
+        uvs_op2 = np.array(uvs_op2)
+        err = np.abs(uvs_op2 - uv_op_gt)
+        assert np.max(err) < 3., f"max_err: {np.max(err):.2f}"
+        print("Verify Pass")
 
     def uvs_warp(self, remap_xy, uvs_ip, method):
+        """
+        unvalid in uvs_op is [-1, -1]
+        """
         uvs_op = []
         if method == "e2i":
             for i, uv in enumerate(uvs_ip):
                 r = self.uv_ego2img(remap_xy, uv)
                 uvs_op.append(r)
         elif method == "i2e":
-            xymap_inv = self.invert_remap(remap_xy)
-
-            # unwarped = cv2.remap(warped, xymap_inv, None, cv2.INTER_LINEAR)
             for i, uv in enumerate(uvs_ip):
                 r = self.uv_img2ego(remap_xy, uv)
-                if r is not None:
-                    uvs_op.append(r)
+                if r is None:
+                    r = [-1, -1]
+                uvs_op.append(r)
         else:
             assert False
         return uvs_op
@@ -142,11 +213,7 @@ class CoordTrans:
 def demo():
     cfgs, basenames = get_cam_params(cam_param_ego_paper)
     ct = CoordTrans(cfgs["K"], cfgs["img_h"], cfgs["img_w"])
-
-    data = np.load("../data/remap_xy.npz")
-    remap_xy = data["remap_xy"]
-    traj_iuvs = data["traj_iuvs"]
-    ct.uvs_warp(remap_xy, traj_iuvs, method="i2e")
+    ct.uvs_warp_verify()
     pass
 
     # uv_ego = ct.uv_img2ego(remap_xy, uv_img)

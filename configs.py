@@ -42,9 +42,9 @@ cam_param_ego_paper = {
     "img_suffix": "png",
     "ground_method": "disp",
 
-    # "root": "/Users/xl/Desktop/ShaoJun/ego_paper_data",
-    "root": "/home/xl/Disk/xl/fut_loc",
-    "case": "20150401_walk_00",
+    "root": "/Users/xl/Desktop/ShaoJun/ego_paper_data",
+    # "root": "/home/xl/Disk/xl/fut_loc",
+    "case": "20150401_walk_01",
     "color_path": "im",
     "depth_path": "disparity",
     "result_path": "results",

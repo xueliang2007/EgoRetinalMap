@@ -201,13 +201,12 @@ class DataConvert:
 
 
 def convert_all_cases():
-    root = "/home/xl/Disk/xl/fut_loc"
-    # root = "/Users/xl/Desktop/ShaoJun/ego_paper_data"
+    # root = "/home/xl/Disk/xl/fut_loc"
+    root = "/Users/xl/Desktop/ShaoJun/ego_paper_data"
     cases = sorted([d for d in os.listdir(root) if os.path.isdir(f"{root}/{d}")])
     for k, case in enumerate(cases):
         dc = DataConvert(case_path=f"{root}/{case}")
         dc.extract_trajs(plot=True)
-
         print(f"k: {k}, case: {case} done!")
 
 
