@@ -1,6 +1,7 @@
 import os
 import cv2
 import json
+import shutil
 import numpy as np
 import open3d as o3d
 
@@ -64,3 +65,16 @@ def crop_pcd(pcd, x_min=-10, x_max=10, y_min=-0.5, y_max=3., z_min=-20, z_max=30
         mesh = o3d.geometry.TriangleMesh.create_coordinate_frame(size=2)
         o3d.visualization.draw_geometries([pcd, pcd_croped, mesh])
     return pcd_croped
+
+
+def gather_results_gy(root, dst_path):
+    cases = sorted([d for d in os.listdir(root) if os.path.isdir(f"{root}/{d}")])
+    if not os.path.exists(dst_path):
+        os.makedirs(dst_path)
+
+    for k, case in enumerate(cases):
+        src = f"{root}/{case}/data_for_gy"
+        dst = f"{dst_path}/{case}"
+        shutil.copytree(src, dst)
+        print(f"{k}/{len(cases)}, {src} --->>> {dst}")
+    print("Done!")

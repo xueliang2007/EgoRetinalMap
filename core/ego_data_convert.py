@@ -33,6 +33,8 @@ def read_cam_params(filename):
 def get_ground_from_disp(fx, fy, cx, cy, img_w, img_h, bgr_fn, disp_fn, vis):
     basename = os.path.basename(bgr_fn)
     disp = DataConvert.read_disparity(disp_fn)
+    if disp is None:
+        return None, None, None
     disp = cv2.resize(disp, (img_w, img_h))
 
     Tx = -0.1  # m
@@ -52,30 +54,31 @@ def get_ground_from_disp(fx, fy, cx, cy, img_w, img_h, bgr_fn, disp_fn, vis):
     mask[depth_map[:, :, 2] > 80] = False
     pts = depth_map[mask, ::].reshape((-1, 3))
 
-    print(basename)
-    print(f"before, num: {len(pts)}, mask: {np.sum(mask)}")
-    for xyz_idx in range(3):
-        print(f"\t{'XYZ'[xyz_idx]}, min: {np.min(pts[:, xyz_idx])}, max: {np.max(pts[:, xyz_idx])}")
+    # for xyz_idx in range(3):
+    #     print(f"\t{'XYZ'[xyz_idx]}, min: {np.min(pts[:, xyz_idx])}, max: {np.max(pts[:, xyz_idx])}")
 
+    num_bef = len(pts)
     xyz_minmax = [[-15, 15], [-4, 5], [3, 25]]
     for xyz_idx in range(3):
         mask[depth_map[:, :, xyz_idx] < xyz_minmax[xyz_idx][0]] = False
         mask[depth_map[:, :, xyz_idx] > xyz_minmax[xyz_idx][1]] = False
 
     pts = depth_map[mask, ::].reshape((-1, 3))
-    print(f"after, num: {len(pts)}")
-    for xyz_idx in range(3):
-        print(f"\t{'XYZ'[xyz_idx]}, min: {np.min(pts[:, xyz_idx])}, max: {np.max(pts[:, xyz_idx])}")
-
-    del depth_map, disp
-
+    del depth_map
+    num_aft = len(pts)
+    # for xyz_idx in range(3):
+    #     print(f"\t{'XYZ'[xyz_idx]}, min: {np.min(pts[:, xyz_idx])}, max: {np.max(pts[:, xyz_idx])}")
     pcd = o3d.geometry.PointCloud(points=o3d.utility.Vector3dVector(pts))
     pcd = pcd.voxel_down_sample(voxel_size=0.15)
-    print(f"down, num: {len(pcd.points)}")
+    num_pcd = len(pcd.points)
+    print(f"{basename}, number bef: {num_bef}, aft: {num_aft}, down: {num_pcd}")
+    if num_pcd < 100:
+        return [0, 0, 0, 0], None, disp
 
     plane_model, inlier_idxs = pcd.segment_plane(distance_threshold=0.06, ransac_n=3, num_iterations=500)
     a, b, c, d = plane_model
     cam_h = np.fabs(d) / np.sqrt(a * a + b * b + c * c)
+    print(f"gd_plane: {a:.3f}x + {b:.3f}y + {c:.3f}z + {d:.3f} = 0, cam_h: {cam_h:.2f}")
 
     if vis:
         inlier_pcd = pcd.select_by_index(inlier_idxs)
@@ -85,7 +88,7 @@ def get_ground_from_disp(fx, fy, cx, cy, img_w, img_h, bgr_fn, disp_fn, vis):
         mesh = o3d.geometry.TriangleMesh.create_coordinate_frame(size=2)
         # o3d.visualization.draw_geometries([pcd, mesh])
         o3d.visualization.draw_geometries([mesh, inlier_pcd, outlier_pcd])
-    return plane_model, cam_h
+    return plane_model, cam_h, disp
 
 
 class DataConvert:
@@ -99,7 +102,7 @@ class DataConvert:
 
         self.case_path = case_path
         self.size = len(self.vTR["vTr"])
-        self.traj_vis_path = f"{case_path}/traj_vis"
+        self.traj_vis_path = f"{case_path}/traj_org_vis"
         self.traj_json_path = f"{case_path}/traj_jsons"
 
         for folder_path in [self.traj_json_path, self.traj_vis_path]:
@@ -128,6 +131,8 @@ class DataConvert:
             line = [float(w) for w in line.split(",")]
             disp.append(line)
 
+        if len(disp) != 480:
+            return None
         disp = np.array(disp).reshape((480, 640))
         return disp
 
@@ -181,13 +186,14 @@ class DataConvert:
             tr_gd = tr_gd[:, :2]
 
             basename = self.basenames[iFrame]
-            trag_img = [[u, v] for u, v in tr_gd]
+            trag_img = [[u, v] for u, v in tr_gd if 0 < u < self.cam_params["img_w"]-1 and 0 < v < self.cam_params["img_h"]-1]
             trag_json = {"traj_iuvs": trag_img}
             with open(f"{self.traj_json_path}/{basename}.json", "w") as fs:
                 json.dump(trag_json, fs)
 
             if plot:
                 cv2.polylines(img, [tr_gd.astype(np.int)], isClosed=False, color=(0, 0, 255), thickness=2)
+                img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
                 cv2.imwrite(f"{self.traj_vis_path}/{basename}", img)
                 cv2.imshow("img", img)
                 cv2.waitKey(2)
@@ -195,12 +201,12 @@ class DataConvert:
 
 
 def convert_all_cases():
-    # root = "/home/xl/Disk/xl/fut_loc"
-    root = "/Users/xl/Desktop/ShaoJun/ego_paper_data"
+    root = "/home/xl/Disk/xl/fut_loc"
+    # root = "/Users/xl/Desktop/ShaoJun/ego_paper_data"
     cases = sorted([d for d in os.listdir(root) if os.path.isdir(f"{root}/{d}")])
     for k, case in enumerate(cases):
         dc = DataConvert(case_path=f"{root}/{case}")
-        dc.extract_trajs(plot=False)
+        dc.extract_trajs(plot=True)
 
         print(f"k: {k}, case: {case} done!")
 

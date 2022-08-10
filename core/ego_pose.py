@@ -14,7 +14,7 @@ class EgoPose:
         self.gd_abcd = None
         self.txyz_v2c = None
         self.rot_mtx_v2c = None
-        self.eulers_yxz_v2c = None
+        self.eulers_xyz_v2c = None
 
         self.cam_k = cam_K
         self.cam_d = cam_D
@@ -45,7 +45,8 @@ class EgoPose:
 
         a, b, c, d = plane_model
         cam_h = np.fabs(d) / np.sqrt(a * a + b * b + c * c)
-        return plane_model, cam_h
+        disp = 1. / depth
+        return plane_model, cam_h, disp
 
     def get_zg_by_ego_vel(self, gd_abcd, vel_3d_instan):
         vel_3d_instan /= np.linalg.norm(vel_3d_instan)
@@ -101,8 +102,9 @@ class EgoPose:
         if err > 1e-3:
             print("be_rot: \n", be_rot, "\nerr_norm: ", err)
 
-        eulers_v2c = Rsci.from_matrix(rot_mat.T).as_euler("YXZ", degrees=True)
         txyz_v2c = -np.dot(rot_mat.T, txyz.T).T
+
+        eulers_v2c = Rsci.from_matrix(rot_mat.T).as_euler("XYZ", degrees=True)
 
         return eulers_v2c, txyz_v2c
 
@@ -142,20 +144,20 @@ class EgoPose:
         if err > 1e-3:
             assert False, f"be_rot: \n{be_rot}\nerr_norm: {err:.5f}"
 
-        eulers_v2c = Rsci.from_matrix(rot_mat.T).as_euler("YXZ", degrees=True)
-        txyz_v2c = np.array([[0], [pvo[1]], [0]], dtype=np.float).reshape(1, 3)
+        eulers_v2c = Rsci.from_matrix(rot_mat.T).as_euler("XYZ", degrees=True)
+        txyz_v2c = -np.dot(rot_mat.T, txyz.T).T
         return eulers_v2c, txyz_v2c
 
     def cam_pose_update(self, vel_instan_veh):
         if vel_instan_veh is None:
-            eulers_yxz_v2c, txyz_v2c = self.get_ego_pose_v2c_without_instan_vel(self.gd_abcd)
+            eulers_xyz_v2c, txyz_v2c = self.get_ego_pose_v2c_without_instan_vel(self.gd_abcd)
         else:
             # 如果是veh的运动方向，由于坐标系不同，所以需要将其绕Z轴旋转180度
-            eulers_yxz_v2c, txyz_v2c = self.get_ego_pose_v2c_with_instan_vel(self.gd_abcd, vel_instan_veh)
+            eulers_xyz_v2c, txyz_v2c = self.get_ego_pose_v2c_with_instan_vel(self.gd_abcd, vel_instan_veh)
 
         self.txyz_v2c = txyz_v2c
-        self.eulers_yxz_v2c = eulers_yxz_v2c
-        self.rot_mtx_v2c = Rsci.from_euler("YXZ", eulers_yxz_v2c, degrees=True).as_matrix()
+        self.eulers_xyz_v2c = eulers_xyz_v2c
+        self.rot_mtx_v2c = Rsci.from_euler("XYZ", eulers_xyz_v2c, degrees=True).as_matrix()
         return
 
 
