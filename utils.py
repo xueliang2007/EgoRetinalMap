@@ -67,14 +67,20 @@ def crop_pcd(pcd, x_min=-10, x_max=10, y_min=-0.5, y_max=3., z_min=-20, z_max=30
     return pcd_croped
 
 
-def gather_results_gy(root, dst_path):
+def gather_results(root, dst_path):
     cases = sorted([d for d in os.listdir(root) if os.path.isdir(f"{root}/{d}")])
     if not os.path.exists(dst_path):
         os.makedirs(dst_path)
 
     for k, case in enumerate(cases):
-        src = f"{root}/{case}/data_for_gy"
-        dst = f"{dst_path}/{case}"
-        shutil.copytree(src, dst)
-        print(f"{k}/{len(cases)}, {src} --->>> {dst}")
+        folder = f"{dst_path}/{case}"
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        for name in ["images", "traj_jsons"]:
+            if os.path.exists(f"{folder}/{name}"):
+                shutil.rmtree(f"{folder}/{name}")
+
+        shutil.copytree(f"{root}/{case}/data_for_gy", f"{folder}/images")
+        shutil.copytree(f"{root}/{case}/traj_jsons", f"{folder}/traj_jsons")
+        print(f"{k}/{len(cases)} done!")
     print("Done!")

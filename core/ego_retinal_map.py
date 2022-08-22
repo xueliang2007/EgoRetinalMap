@@ -10,7 +10,7 @@ from core.ego_pose import EgoPose
 from core.uvs_transform import CoordTrans
 from core.ego_data_convert import get_ground_from_disp
 
-from utils import load_json, write_json, gather_results_gy
+from utils import load_json, write_json, gather_results
 from configs import get_cam_params, cam_param_configs_sim, cam_param_ego_paper
 
 
@@ -226,24 +226,24 @@ class EgoRetinalMap(EgoPose, CoordTrans):
 def all_case():
     cfgs = cam_param_ego_paper
     cases = sorted([d for d in os.listdir(cfgs["root"]) if os.path.isdir(f"{cfgs['root']}/{d}")])
-    for k, case in enumerate(cases):
-        cfgs["case"] = case
-        cam_params, basenames_order = get_cam_params(cfgs)
-        egr = EgoRetinalMap(cam_params, basenames_order)
-        for i in range(0, egr.num_imgs):
-            egr.run_single(img_idx=i)
+    # for k, case in enumerate(cases):
+    #     cfgs["case"] = case
+    #     cam_params, basenames_order = get_cam_params(cfgs)
+    #     egr = EgoRetinalMap(cam_params, basenames_order)
+    #     for i in range(0, egr.num_imgs):
+    #         egr.run_single(img_idx=i)
+    #
+    #     print(f"k: {k}/{egr.num_imgs}, case: {case} done!")
 
-        print(f"k: {k}, case: {case} done!")
-
-    gather_results_gy(cfgs["root"], dst_path=f"{cfgs['root']}/../all_case_results_for_gy_paper_datas")
+    gather_results(cfgs["root"], dst_path=f"{cfgs['root']}/../all_case_results")
 
 
 if __name__ == '__main__':
-    cfgs = [cam_param_configs_sim, cam_param_ego_paper][1]
-    cam_params, basenames_order = get_cam_params(cfgs)
-    egr = EgoRetinalMap(cam_params, basenames_order)
-    egr.run_single(img_idx=2)
+    # cfgs = [cam_param_configs_sim, cam_param_ego_paper][1]
+    # cam_params, basenames_order = get_cam_params(cfgs)
+    # egr = EgoRetinalMap(cam_params, basenames_order)
+    # egr.run_single(img_idx=2)
 
-    # all_case()
+    all_case()
 
 
