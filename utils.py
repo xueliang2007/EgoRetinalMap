@@ -1,5 +1,6 @@
 import os
-import cv2
+import cv2 as cv
+import glob
 import json
 import shutil
 import numpy as np
@@ -72,15 +73,33 @@ def gather_results(root, dst_path):
     if not os.path.exists(dst_path):
         os.makedirs(dst_path)
 
+    size_dict = {}
     for k, case in enumerate(cases):
         folder = f"{dst_path}/{case}"
         if not os.path.exists(folder):
             os.makedirs(folder)
-        for name in ["images", "traj_jsons"]:
+        for name in ["images", "traj_jsons_ego"]:
             if os.path.exists(f"{folder}/{name}"):
                 shutil.rmtree(f"{folder}/{name}")
 
         shutil.copytree(f"{root}/{case}/data_for_gy", f"{folder}/images")
-        shutil.copytree(f"{root}/{case}/traj_jsons", f"{folder}/traj_jsons")
+        shutil.copytree(f"{root}/{case}/traj_jsons_ego", f"{folder}/traj_jsons_ego")
+
+        png_fns = glob.glob(f"{folder}/images/seq_*")
+        json_fns = glob.glob(f"{folder}/traj_jsons_ego/*.json")
+        num_png = len(png_fns)
+        num_json = len(json_fns)
+        assert num_png == 4 * num_json
+        size_dict[case] = num_json
+
         print(f"{k}/{len(cases)} done!")
+
+    print(size_dict)
+    print(f"Total size: {sum(size_dict.values())}")
     print("Done!")
+
+
+if __name__ == '__main__':
+    root = "/home/xl/Disk/xl/all_case_results"
+    dst_path = "/home/xl/Disk/xl/all_case_results"
+    gather_results(root, dst_path)

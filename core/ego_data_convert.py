@@ -5,6 +5,7 @@ PaperDataset link: http://humbi-dataset.s3.amazonaws.com/fut_loc.zip
 import os
 import cv2
 import json
+import shutil
 import numpy as np
 import open3d as o3d
 from matplotlib import pyplot as plt
@@ -30,12 +31,12 @@ def read_cam_params(filename):
     return cam_params
 
 
-def get_ground_from_disp(fx, fy, cx, cy, img_w, img_h, bgr_fn, disp_fn, vis):
+def get_ground_from_disp(fx, fy, cx, cy, img_w, img_h, bgr_fn, disp_fn, seg_mask, vis):
     basename = os.path.basename(bgr_fn)
     disp = DataConvert.read_disparity(disp_fn)
     if disp is None:
         return None, None, None
-    disp = cv2.resize(disp, (img_w, img_h))
+    disp = cv.resize(disp, (img_w, img_h))
 
     Tx = -0.1  # m
     f = (fx + fy) * 0.5
@@ -43,15 +44,33 @@ def get_ground_from_disp(fx, fy, cx, cy, img_w, img_h, bgr_fn, disp_fn, vis):
                   [0.0, 1.0, 0.0, -cy],
                   [0.0, 0.0, 0.0,   f],
                   [0.0, 0.0, -1.0 / Tx, 0.0]])
-    depth_map = cv2.reprojectImageTo3D(disp.astype(np.float32), Q, handleMissingValues=True)
+    depth_map = cv.reprojectImageTo3D(disp.astype(np.float32), Q, handleMissingValues=True)
 
-    valid_roi = [100, 100, img_w-100, img_h-100]
+    valid_roi = [100, 100, img_w-100, img_h-50]
     mask = np.zeros((img_h, img_w), dtype=np.uint8)
-    cv2.rectangle(mask, (valid_roi[0], valid_roi[1]), (valid_roi[2], valid_roi[3]), 1, -1)
+    cv.rectangle(mask, (valid_roi[0], valid_roi[1]), (valid_roi[2], valid_roi[3]), 1, -1)
     mask = mask.astype(np.bool)
 
     mask[depth_map[:, :, 2] < 0] = False
     mask[depth_map[:, :, 2] > 80] = False
+    s1 = np.sum(mask)
+    if isinstance(seg_mask, np.ndarray):
+        ground_mask_value = 100
+        if len(seg_mask.shape) == 3:
+            mask_unk = seg_mask[:, :, 0] == 0
+            mask_ground = seg_mask[:, :, 0] == ground_mask_value
+            mask_megre = np.bitwise_not(np.bitwise_or(mask_ground, mask_unk))
+            mask[mask_megre] = False
+        elif len(seg_mask.shape) == 2:
+            mask_unk = seg_mask == 0
+            mask_ground = seg_mask == ground_mask_value
+            mask_megre = np.bitwise_not(np.bitwise_or(mask_ground, mask_unk))
+            mask[mask_megre] = False
+        else:
+            pass
+        s2 = np.sum(mask)
+        print(f"\t\tground_mask[!=100], bef: {s1}, aft: {s2}")
+
     pts = depth_map[mask, ::].reshape((-1, 3))
 
     # for xyz_idx in range(3):
@@ -71,14 +90,14 @@ def get_ground_from_disp(fx, fy, cx, cy, img_w, img_h, bgr_fn, disp_fn, vis):
     pcd = o3d.geometry.PointCloud(points=o3d.utility.Vector3dVector(pts))
     pcd = pcd.voxel_down_sample(voxel_size=0.15)
     num_pcd = len(pcd.points)
-    print(f"{basename}, number bef: {num_bef}, aft: {num_aft}, down: {num_pcd}")
+    print(f"\t\t{basename}, number bef: {num_bef}, aft: {num_aft}, down: {num_pcd}")
     if num_pcd < 100:
         return [0, 0, 0, 0], None, disp
 
     plane_model, inlier_idxs = pcd.segment_plane(distance_threshold=0.06, ransac_n=3, num_iterations=500)
     a, b, c, d = plane_model
     cam_h = np.fabs(d) / np.sqrt(a * a + b * b + c * c)
-    print(f"gd_plane: {a:.3f}x + {b:.3f}y + {c:.3f}z + {d:.3f} = 0, cam_h: {cam_h:.2f}")
+    print(f"\t\tgd_plane: {a:.3f}x + {b:.3f}y + {c:.3f}z + {d:.3f} = 0, cam_h: {cam_h:.2f}")
 
     if vis:
         inlier_pcd = pcd.select_by_index(inlier_idxs)
@@ -103,7 +122,7 @@ class DataConvert:
         self.case_path = case_path
         self.size = len(self.vTR["vTr"])
         self.traj_vis_path = f"{case_path}/traj_org_vis"
-        self.traj_json_path = f"{case_path}/traj_jsons"
+        self.traj_json_path = f"{case_path}/traj_jsons_img"
 
         for folder_path in [self.traj_json_path, self.traj_vis_path]:
             if not os.path.exists(folder_path):
@@ -178,7 +197,7 @@ class DataConvert:
             if not os.path.exists(img_fn) or not len(tr["XYZ"]):
                continue
 
-            img = cv2.imread(img_fn)
+            img = cv.imread(img_fn)
             tr_gd = tr["XYZ"] - tr["up"]
             tr_gd = np.dot(self.cam_params["K*R_rect"], tr_gd.T).T  # Nx3
             tr_gd = tr_gd[tr_gd[:, 2] > 0]
@@ -192,21 +211,21 @@ class DataConvert:
                 json.dump(trag_json, fs)
 
             if plot:
-                cv2.polylines(img, [tr_gd.astype(np.int)], isClosed=False, color=(0, 0, 255), thickness=2)
-                img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
-                cv2.imwrite(f"{self.traj_vis_path}/{basename}", img)
-                cv2.imshow("img", img)
-                cv2.waitKey(2)
+                cv.polylines(img, [tr_gd.astype(np.int)], isClosed=False, color=(0, 0, 255), thickness=2)
+                img = cv.resize(img, (0, 0), fx=0.5, fy=0.5)
+                cv.imwrite(f"{self.traj_vis_path}/{basename}", img)
+                cv.imshow("img", img)
+                cv.waitKey(2)
             pass
 
 
 def convert_all_cases():
-    # root = "/home/xl/Disk/xl/fut_loc"
-    root = "/Users/xl/Desktop/ShaoJun/ego_paper_data"
+    root = "/home/xl/Disk/xl/fut_loc"
+    # root = "/Users/xl/Desktop/ShaoJun/ego_paper_data"
     cases = sorted([d for d in os.listdir(root) if os.path.isdir(f"{root}/{d}")])
     for k, case in enumerate(cases):
         dc = DataConvert(case_path=f"{root}/{case}")
-        dc.extract_trajs(plot=True)
+        dc.extract_trajs(plot=False)
         print(f"k: {k}, case: {case} done!")
 
 

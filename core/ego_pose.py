@@ -1,5 +1,5 @@
 import os
-import cv2
+import cv2 as cv
 import glob
 import numpy as np
 import open3d as o3d
@@ -21,7 +21,9 @@ class EgoPose:
         self.img_h = img_h
         self.img_w = img_w
 
-    def get_ground_from_pcd(self, rgb_img_fn, depth_fn, vis):
+    def get_ground_from_pcd(self, rgb_img_fn, depth_fn, seg_mask, vis):
+        assert False, "todo mask"
+
         rgb = o3d.geometry.Image(o3d.io.read_image(rgb_img_fn))
         depth = o3d.geometry.Image(o3d.io.read_image(depth_fn))
 

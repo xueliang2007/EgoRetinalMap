@@ -1,5 +1,5 @@
 import os
-import cv2
+import cv2 as cv
 import heapq
 import numpy as np
 from configs import cam_param_configs_sim, cam_param_ego_paper, get_cam_params
@@ -109,7 +109,7 @@ class CoordTrans:
         uvs_img = np.array([remap_vec[idx] for idx in vertexs], dtype=np.float32)
         uvs_ego = np.array(uvs_ego, dtype=np.float32)
 
-        m = cv2.getPerspectiveTransform(uvs_img, uvs_ego)
+        m = cv.getPerspectiveTransform(uvs_img, uvs_ego)
         img_uv1 = np.insert(uv, 2, 1, axis=0)
         ego_uvx = np.dot(m, img_uv1)
         ego_uv1 = ego_uvx / ego_uvx[2, 0]
@@ -126,7 +126,7 @@ class CoordTrans:
         uvs_img = np.array([remap_xy[u, v] for u, v in uvs_ego], dtype=np.float32)
         uvs_ego = np.array(uvs_ego, dtype=np.float32)
 
-        m = cv2.getPerspectiveTransform(uvs_ego, uvs_img)
+        m = cv.getPerspectiveTransform(uvs_ego, uvs_img)
         ego_uv1 = np.insert(uv[::-1], 2, 1, axis=0)
         img_uvx = np.dot(m, ego_uv1)
         img_uv1 = img_uvx / img_uvx[2, 0]
@@ -159,9 +159,9 @@ class CoordTrans:
         remap_xy, traj_iuvs = data["remap_xy"], data["traj_iuvs"]
 
         mask = np.zeros((self.img_h, self.img_w, 3), dtype=np.uint8)
-        cv2.polylines(mask, [traj_iuvs.astype(np.int)], isClosed=False, color=(255, 255, 255), thickness=3)
-        ego_mask = cv2.remap(mask, remap_xy[:, :, 0], remap_xy[:, :, 1], cv2.INTER_LINEAR,
-                             borderMode=cv2.BORDER_CONSTANT, borderValue=[0, 0, 0])
+        cv.polylines(mask, [traj_iuvs.astype(np.int)], isClosed=False, color=(255, 255, 255), thickness=3)
+        ego_mask = cv.remap(mask, remap_xy[:, :, 0], remap_xy[:, :, 1], cv.INTER_LINEAR,
+                             borderMode=cv.BORDER_CONSTANT, borderValue=[0, 0, 0])
         uvs_op = []
         for i, uv in enumerate(traj_iuvs):
             r = self.uv_img2ego(remap_xy, uv)
@@ -174,9 +174,9 @@ class CoordTrans:
         for u, v in uvs_op.astype(np.int):
             if u < 0 and v < 0:
                 continue
-            cv2.circle(ego_mask, (u, v), 3, (0, 0, 255), -1)
-        cv2.imshow("ego_mask", ego_mask)
-        cv2.waitKey(10)
+            cv.circle(ego_mask, (u, v), 3, (0, 0, 255), -1)
+        cv.imshow("ego_mask", ego_mask)
+        cv.waitKey(10)
 
         # Verify-2. inverse transform, compare with itself, PASS: uvs_op2 should equal to uv_op_gt
         uv_op_gt = traj_iuvs[uvs_op[:, 0] > 0]
